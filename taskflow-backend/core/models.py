@@ -64,3 +64,37 @@ class TaskList(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Task(models.Model):
+    PRIORITY_NONE = 'NONE'
+    PRIORITY_LOW = 'LOW'
+    PRIORITY_MEDIUM = 'MEDIUM'
+    PRIORITY_HIGH = 'HIGH'
+    PRIORITY_URGENT = 'URGENT'
+    PRIORITY_CHOICES = [
+        (PRIORITY_NONE, 'None'),
+        (PRIORITY_LOW, 'Low'),
+        (PRIORITY_MEDIUM, 'Medium'),
+        (PRIORITY_HIGH, 'High'),
+        (PRIORITY_URGENT, 'Urgent'),
+    ]
+
+    task_list = models.ForeignKey(TaskList, on_delete=models.CASCADE, related_name='tasks')
+    title = models.CharField(max_length=500)
+    description = models.TextField(blank=True)
+    assignees = models.ManyToManyField(User, blank=True, related_name='assigned_tasks')
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default=PRIORITY_NONE)
+    due_date = models.DateField(null=True, blank=True)
+    position = models.IntegerField(default=0)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name='created_tasks'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['position']
+
+    def __str__(self):
+        return self.title

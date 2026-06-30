@@ -7,14 +7,16 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Project, TaskList, User, Workspace
+from .models import Project, Task, TaskList, User, Workspace
 from .permissions import IsWorkspaceMember, IsWorkspaceOwner
 from .serializers import (
     ProjectListSerializer,
     ProjectSerializer,
     ProjectWriteSerializer,
     RegisterSerializer,
+    TaskDetailSerializer,
     TaskListSerializer,
+    TaskSerializer,
     UserSerializer,
     WorkspaceMemberSerializer,
     WorkspaceSerializer,
@@ -157,6 +159,12 @@ def _workspace_member_or_403(request, workspace):
     return None
 
 
+def _project_qs():
+    return Project.objects.select_related('workspace').prefetch_related(
+        'task_lists__tasks__assignees'
+    )
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def workspace_projects(request, workspace_id):
@@ -178,7 +186,7 @@ def workspace_projects(request, workspace_id):
         TaskList(project=project, name='Done', position=2, color='#10B981'),
     ])
     return Response(
-        ProjectSerializer(Project.objects.prefetch_related('task_lists').get(pk=project.pk)).data,
+        ProjectSerializer(_project_qs().get(pk=project.pk)).data,
         status=status.HTTP_201_CREATED,
     )
 
@@ -186,10 +194,7 @@ def workspace_projects(request, workspace_id):
 @api_view(['GET', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def project_detail(request, pk):
-    project = get_object_or_404(
-        Project.objects.select_related('workspace').prefetch_related('task_lists'),
-        pk=pk,
-    )
+    project = get_object_or_404(_project_qs(), pk=pk)
     err = _workspace_member_or_403(request, project.workspace)
     if err:
         return err
@@ -201,15 +206,17 @@ def project_detail(request, pk):
         serializer = ProjectWriteSerializer(project, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         project = serializer.save()
-        return Response(ProjectSerializer(
-            Project.objects.prefetch_related('task_lists').get(pk=project.pk)
-        ).data)
+        return Response(ProjectSerializer(_project_qs().get(pk=project.pk)).data)
 
     project.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ── TaskList views ────────────────────────────────────────────────────────────
+
+def _tasklist_qs():
+    return TaskList.objects.select_related('project__workspace').prefetch_related('tasks__assignees')
+
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
@@ -220,7 +227,8 @@ def project_lists(request, pk):
         return err
 
     if request.method == 'GET':
-        return Response(TaskListSerializer(project.task_lists.order_by('position'), many=True).data)
+        lists = project.task_lists.prefetch_related('tasks__assignees').order_by('position')
+        return Response(TaskListSerializer(lists, many=True).data)
 
     name = request.data.get('name', '').strip()
     if not name:
@@ -229,13 +237,13 @@ def project_lists(request, pk):
     max_pos = project.task_lists.aggregate(m=Max('position'))['m']
     position = 0 if max_pos is None else max_pos + 1
     tl = TaskList.objects.create(project=project, name=name, position=position, color=color)
-    return Response(TaskListSerializer(tl).data, status=status.HTTP_201_CREATED)
+    return Response(TaskListSerializer(_tasklist_qs().get(pk=tl.pk)).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def tasklist_detail(request, pk):
-    tl = get_object_or_404(TaskList.objects.select_related('project__workspace'), pk=pk)
+    tl = get_object_or_404(_tasklist_qs(), pk=pk)
     err = _workspace_member_or_403(request, tl.project.workspace)
     if err:
         return err
@@ -249,10 +257,9 @@ def tasklist_detail(request, pk):
         if 'color' in request.data:
             tl.color = request.data['color']
         tl.save()
-        return Response(TaskListSerializer(tl).data)
+        return Response(TaskListSerializer(_tasklist_qs().get(pk=tl.pk)).data)
 
-    # Phase 4 will add: task_count = tl.tasks.count()
-    task_count = 0
+    task_count = tl.tasks.count()
     if task_count > 0:
         return Response(
             {'detail': f'This list has {task_count} task(s). Delete or move them first.'},
@@ -300,4 +307,185 @@ def tasklist_reorder(request, pk):
             tl.position = new_position
             tl.save()
 
-    return Response(TaskListSerializer(project.task_lists.order_by('position'), many=True).data)
+    lists = project.task_lists.prefetch_related('tasks__assignees').order_by('position')
+    return Response(TaskListSerializer(lists, many=True).data)
+
+
+# ── Task views ────────────────────────────────────────────────────────────────
+
+def _task_qs():
+    return Task.objects.select_related(
+        'task_list__project__workspace', 'created_by'
+    ).prefetch_related('assignees')
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def list_tasks(request, list_id):
+    tl = get_object_or_404(TaskList.objects.select_related('project__workspace'), pk=list_id)
+    err = _workspace_member_or_403(request, tl.project.workspace)
+    if err:
+        return err
+
+    if request.method == 'GET':
+        tasks = tl.tasks.prefetch_related('assignees').order_by('position')
+        return Response(TaskSerializer(tasks, many=True).data)
+
+    title = request.data.get('title', '').strip()
+    if not title:
+        return Response({'detail': 'title is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        max_pos = tl.tasks.aggregate(m=Max('position'))['m']
+        position = 0 if max_pos is None else max_pos + 1
+        task = Task.objects.create(
+            task_list=tl,
+            title=title,
+            position=position,
+            created_by=request.user,
+        )
+    return Response(TaskSerializer(_task_qs().get(pk=task.pk)).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def task_detail(request, pk):
+    task = get_object_or_404(_task_qs(), pk=pk)
+    err = _workspace_member_or_403(request, task.task_list.project.workspace)
+    if err:
+        return err
+
+    if request.method == 'GET':
+        return Response(TaskDetailSerializer(task).data)
+
+    if request.method == 'PATCH':
+        workspace = task.task_list.project.workspace
+        data = request.data
+        assignee_ids = None
+
+        if 'title' in data:
+            title = str(data['title']).strip()
+            if not title:
+                return Response({'detail': 'title cannot be empty.'}, status=status.HTTP_400_BAD_REQUEST)
+            task.title = title
+
+        if 'description' in data:
+            task.description = data['description']
+
+        if 'priority' in data:
+            valid = [c[0] for c in Task.PRIORITY_CHOICES]
+            if data['priority'] not in valid:
+                return Response(
+                    {'detail': f'Invalid priority. Choose from: {", ".join(valid)}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            task.priority = data['priority']
+
+        if 'due_date' in data:
+            task.due_date = data['due_date'] or None
+
+        if 'assignees' in data:
+            assignee_ids = data['assignees']
+            if not isinstance(assignee_ids, list):
+                return Response(
+                    {'detail': 'assignees must be a list of user IDs.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            valid_ids = set(
+                workspace.members.filter(pk__in=assignee_ids).values_list('pk', flat=True)
+            )
+            invalid = [uid for uid in assignee_ids if uid not in valid_ids]
+            if invalid:
+                return Response(
+                    {'detail': f'Users {invalid} are not members of this workspace.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        task.save()
+        if assignee_ids is not None:
+            task.assignees.set(assignee_ids)
+
+        return Response(TaskDetailSerializer(_task_qs().get(pk=task.pk)).data)
+
+    task.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def task_move(request, pk):
+    task = get_object_or_404(
+        Task.objects.select_related('task_list__project__workspace'), pk=pk
+    )
+    err = _workspace_member_or_403(request, task.task_list.project.workspace)
+    if err:
+        return err
+
+    new_list_id = request.data.get('task_list_id')
+    new_position = request.data.get('position')
+
+    if new_list_id is None or new_position is None:
+        return Response(
+            {'detail': 'task_list_id and position are required.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        new_list_id = int(new_list_id)
+        new_position = int(new_position)
+    except (TypeError, ValueError):
+        return Response(
+            {'detail': 'task_list_id and position must be integers.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if new_position < 0:
+        return Response({'detail': 'position must be >= 0.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    dest_list = get_object_or_404(
+        TaskList.objects.select_related('project__workspace'), pk=new_list_id
+    )
+    if dest_list.project.workspace_id != task.task_list.project.workspace_id:
+        return Response(
+            {'detail': 'Cannot move task to a different workspace.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    old_list = task.task_list
+    old_position = task.position
+
+    with transaction.atomic():
+        if old_list.id == dest_list.id:
+            # Reorder within the same list
+            if new_position != old_position:
+                if new_position < old_position:
+                    Task.objects.filter(
+                        task_list=old_list,
+                        position__gte=new_position,
+                        position__lt=old_position,
+                    ).update(position=F('position') + 1)
+                else:
+                    Task.objects.filter(
+                        task_list=old_list,
+                        position__gt=old_position,
+                        position__lte=new_position,
+                    ).update(position=F('position') - 1)
+                task.position = new_position
+                task.save()
+        else:
+            # Close the gap in the source list
+            Task.objects.filter(
+                task_list=old_list,
+                position__gt=old_position,
+            ).update(position=F('position') - 1)
+
+            # Make room in the destination list
+            Task.objects.filter(
+                task_list=dest_list,
+                position__gte=new_position,
+            ).update(position=F('position') + 1)
+
+            # Move the task
+            task.task_list = dest_list
+            task.position = new_position
+            task.save()
+
+    return Response(TaskSerializer(_task_qs().get(pk=task.pk)).data)

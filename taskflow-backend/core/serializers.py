@@ -1,7 +1,7 @@
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from rest_framework import serializers
-from .models import User, Workspace, Project, TaskList
+from .models import Task, User, Workspace, Project, TaskList
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -67,10 +67,42 @@ class WorkspaceListSerializer(serializers.ModelSerializer):
         return obj.members.count()
 
 
+class TaskSerializer(serializers.ModelSerializer):
+    assignees = WorkspaceMemberSerializer(many=True, read_only=True)
+    comment_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Task
+        fields = ('id', 'title', 'priority', 'due_date', 'position', 'assignees', 'comment_count')
+
+    def get_comment_count(self, obj):
+        return 0
+
+
+class TaskDetailSerializer(serializers.ModelSerializer):
+    assignees = WorkspaceMemberSerializer(many=True, read_only=True)
+    created_by = WorkspaceMemberSerializer(read_only=True)
+    comment_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Task
+        fields = (
+            'id', 'task_list_id', 'title', 'description', 'priority', 'due_date',
+            'position', 'assignees', 'created_by', 'created_at', 'updated_at',
+            'comment_count',
+        )
+        read_only_fields = ('id', 'task_list_id', 'position', 'created_by', 'created_at', 'updated_at')
+
+    def get_comment_count(self, obj):
+        return 0
+
+
 class TaskListSerializer(serializers.ModelSerializer):
+    tasks = TaskSerializer(many=True, read_only=True)
+
     class Meta:
         model = TaskList
-        fields = ('id', 'name', 'position', 'color')
+        fields = ('id', 'name', 'position', 'color', 'tasks')
         read_only_fields = ('id', 'position')
 
 

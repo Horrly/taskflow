@@ -117,11 +117,22 @@ App will be available at `http://localhost:5173`
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/projects/{id}/lists/` | Bearer (member) | List columns ordered by position |
+| GET | `/api/projects/{id}/lists/` | Bearer (member) | List columns ordered by position (includes nested tasks) |
 | POST | `/api/projects/{id}/lists/` | Bearer (member) | Add a column (auto-assigns next position) |
 | PATCH | `/api/lists/{id}/` | Bearer (member) | Rename or recolor a column |
-| DELETE | `/api/lists/{id}/` | Bearer (member) | Delete column (guarded against tasks in Phase 4) |
+| DELETE | `/api/lists/{id}/` | Bearer (member) | Delete column (blocked if it has tasks) |
 | PATCH | `/api/lists/{id}/reorder/` | Bearer (member) | Move column: `{ "position": 0 }` shifts others |
+
+### Tasks
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/lists/{id}/tasks/` | Bearer (member) | List tasks in a column, ordered by position |
+| POST | `/api/lists/{id}/tasks/` | Bearer (member) | Quick-create a task `{ "title": "..." }` |
+| GET | `/api/tasks/{id}/` | Bearer (member) | Full task detail with description, assignees |
+| PATCH | `/api/tasks/{id}/` | Bearer (member) | Update title, description, priority, due_date, assignees (list of IDs) |
+| DELETE | `/api/tasks/{id}/` | Bearer (member) | Delete task |
+| PATCH | `/api/tasks/{id}/move/` | Bearer (member) | Move task: `{ "task_list_id": N, "position": N }` — re-sequences both source and dest columns atomically |
 
 ---
 
@@ -132,7 +143,7 @@ App will be available at `http://localhost:5173`
 | **Phase 1** | Project setup & JWT authentication | ✅ Complete |
 | **Phase 2** | Workspaces with invite-by-email | ✅ Complete |
 | **Phase 3** | Projects & Kanban task lists with drag-and-drop reordering | ✅ Complete |
-| Phase 4 | Tasks — card details, checklists, due dates, labels | Pending |
+| **Phase 4** | Tasks — drag-and-drop cards, slide-out detail panel, priorities, due dates, assignees | ✅ Complete |
 | Phase 5 | Team members & granular permissions | Pending |
 | Phase 6 | Real-time updates (WebSockets / Django Channels) | Pending |
 | Phase 7 | File attachments & avatar uploads | Pending |

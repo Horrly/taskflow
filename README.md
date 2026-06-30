@@ -81,12 +81,27 @@ App will be available at `http://localhost:5173`
 
 ## API Endpoints
 
+### Auth
+
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/api/auth/register/` | Public | Register new user, returns tokens |
 | POST | `/api/auth/login/` | Public | Login, returns tokens |
 | POST | `/api/auth/token/refresh/` | Public | Refresh access token |
 | GET | `/api/auth/me/` | Bearer | Get current user profile |
+
+### Workspaces
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/workspaces/` | Bearer | List workspaces the current user is a member of |
+| POST | `/api/workspaces/` | Bearer | Create a workspace (caller becomes owner) |
+| GET | `/api/workspaces/{id}/` | Bearer (member) | Workspace detail |
+| PATCH | `/api/workspaces/{id}/` | Bearer (owner) | Rename workspace |
+| DELETE | `/api/workspaces/{id}/` | Bearer (owner) | Delete workspace |
+| GET | `/api/workspaces/{id}/members/` | Bearer (member) | List all members |
+| POST | `/api/workspaces/{id}/invite/` | Bearer (member) | Invite by email `{ "email": "..." }` |
+| POST | `/api/workspaces/{id}/remove-member/` | Bearer (owner) | Remove member `{ "user_id": ... }` |
 
 ---
 
@@ -95,7 +110,7 @@ App will be available at `http://localhost:5173`
 | Phase | Description | Status |
 |-------|-------------|--------|
 | **Phase 1** | Project setup & JWT authentication | ✅ Complete |
-| Phase 2 | Workspace & board management | Pending |
+| **Phase 2** | Workspaces with invite-by-email | ✅ Complete |
 | Phase 3 | Lists & cards (Trello-style drag-and-drop) | Pending |
 | Phase 4 | Card details — checklists, due dates, labels | Pending |
 | Phase 5 | Team members & permissions | Pending |

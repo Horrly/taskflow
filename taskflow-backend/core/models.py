@@ -16,3 +16,19 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.email
+
+
+class Workspace(models.Model):
+    name = models.CharField(max_length=255)
+    owner = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='owned_workspaces'
+    )
+    members = models.ManyToManyField(User, related_name='workspaces', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.members.add(self.owner)
+
+    def __str__(self):
+        return self.name

@@ -1,7 +1,7 @@
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from rest_framework import serializers
-from .models import User
+from .models import User, Workspace
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -34,3 +34,34 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ('id', 'email', 'first_name', 'last_name', 'avatar', 'date_joined')
         read_only_fields = ('id', 'date_joined')
+
+
+class WorkspaceMemberSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('id', 'email', 'first_name', 'last_name', 'avatar')
+
+
+class WorkspaceSerializer(serializers.ModelSerializer):
+    owner = WorkspaceMemberSerializer(read_only=True)
+    members = WorkspaceMemberSerializer(many=True, read_only=True)
+    member_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Workspace
+        fields = ('id', 'name', 'owner', 'members', 'member_count', 'created_at')
+        read_only_fields = ('id', 'owner', 'members', 'member_count', 'created_at')
+
+    def get_member_count(self, obj):
+        return obj.members.count()
+
+
+class WorkspaceListSerializer(serializers.ModelSerializer):
+    member_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Workspace
+        fields = ('id', 'name', 'member_count', 'created_at')
+
+    def get_member_count(self, obj):
+        return obj.members.count()

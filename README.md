@@ -103,6 +103,26 @@ App will be available at `http://localhost:5173`
 | POST | `/api/workspaces/{id}/invite/` | Bearer (member) | Invite by email `{ "email": "..." }` |
 | POST | `/api/workspaces/{id}/remove-member/` | Bearer (owner) | Remove member `{ "user_id": ... }` |
 
+### Projects
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/workspaces/{id}/projects/` | Bearer (member) | List projects in a workspace |
+| POST | `/api/workspaces/{id}/projects/` | Bearer (member) | Create project (auto-creates 3 default columns) |
+| GET | `/api/projects/{id}/` | Bearer (member) | Project detail with nested task lists |
+| PATCH | `/api/projects/{id}/` | Bearer (member) | Update name, description, status, due date |
+| DELETE | `/api/projects/{id}/` | Bearer (member) | Delete project (cascades to lists) |
+
+### Task Lists (Kanban Columns)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/projects/{id}/lists/` | Bearer (member) | List columns ordered by position |
+| POST | `/api/projects/{id}/lists/` | Bearer (member) | Add a column (auto-assigns next position) |
+| PATCH | `/api/lists/{id}/` | Bearer (member) | Rename or recolor a column |
+| DELETE | `/api/lists/{id}/` | Bearer (member) | Delete column (guarded against tasks in Phase 4) |
+| PATCH | `/api/lists/{id}/reorder/` | Bearer (member) | Move column: `{ "position": 0 }` shifts others |
+
 ---
 
 ## Project Status
@@ -111,9 +131,9 @@ App will be available at `http://localhost:5173`
 |-------|-------------|--------|
 | **Phase 1** | Project setup & JWT authentication | ✅ Complete |
 | **Phase 2** | Workspaces with invite-by-email | ✅ Complete |
-| Phase 3 | Lists & cards (Trello-style drag-and-drop) | Pending |
-| Phase 4 | Card details — checklists, due dates, labels | Pending |
-| Phase 5 | Team members & permissions | Pending |
+| **Phase 3** | Projects & Kanban task lists with drag-and-drop reordering | ✅ Complete |
+| Phase 4 | Tasks — card details, checklists, due dates, labels | Pending |
+| Phase 5 | Team members & granular permissions | Pending |
 | Phase 6 | Real-time updates (WebSockets / Django Channels) | Pending |
 | Phase 7 | File attachments & avatar uploads | Pending |
 | Phase 8 | Notifications & activity feed | Pending |

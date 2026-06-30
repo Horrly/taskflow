@@ -32,3 +32,35 @@ class Workspace(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Project(models.Model):
+    STATUS_ACTIVE = 'ACTIVE'
+    STATUS_ARCHIVED = 'ARCHIVED'
+    STATUS_CHOICES = [(STATUS_ACTIVE, 'Active'), (STATUS_ARCHIVED, 'Archived')]
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name='projects')
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    due_date = models.DateField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name='created_projects'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class TaskList(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='task_lists')
+    name = models.CharField(max_length=255)
+    position = models.IntegerField(default=0)
+    color = models.CharField(max_length=20, blank=True, default='')
+
+    class Meta:
+        ordering = ['position']
+
+    def __str__(self):
+        return self.name

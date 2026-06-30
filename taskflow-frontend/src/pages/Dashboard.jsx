@@ -5,6 +5,12 @@ import api from '../api/axios';
 import Modal from '../components/Modal';
 import Avatar from '../components/Avatar';
 
+const STATUS_BADGE = {
+  ACTIVE: 'bg-green-100 text-green-700',
+  ARCHIVED: 'bg-gray-100 text-gray-500',
+};
+const STATUS_LABELS = { ACTIVE: 'Active', ARCHIVED: 'Archived' };
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function extractError(err, fallback = 'Something went wrong.') {
@@ -112,14 +118,126 @@ function MemberRow({ member, isOwner, canRemove, onRemove }) {
   );
 }
 
+// ── ProjectCard ───────────────────────────────────────────────────────────────
+
+function ProjectCard({ project, workspaceId, onClick }) {
+  return (
+    <button
+      onClick={() => onClick(project)}
+      className="text-left bg-white rounded-xl border border-gray-200 p-5 hover:border-indigo-300 hover:shadow-sm transition-all group"
+    >
+      <div className="flex items-start justify-between mb-2">
+        <h3 className="text-sm font-semibold text-gray-900 group-hover:text-indigo-700 transition-colors line-clamp-1">
+          {project.name}
+        </h3>
+        <span className={`ml-2 flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_BADGE[project.status] || STATUS_BADGE.ACTIVE}`}>
+          {STATUS_LABELS[project.status] || 'Active'}
+        </span>
+      </div>
+      {project.description && (
+        <p className="text-xs text-gray-500 line-clamp-2 mb-3">{project.description}</p>
+      )}
+      <div className="flex items-center justify-between mt-auto">
+        <span className="text-xs text-gray-400">0 tasks</span>
+        {project.due_date && (
+          <span className="text-xs text-gray-400">
+            Due {new Date(project.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          </span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ── ProjectsTab ───────────────────────────────────────────────────────────────
+
+function ProjectsTab({ workspace, onNewProject }) {
+  const navigate = useNavigate();
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchProjects = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/workspaces/${workspace.id}/projects/`);
+      setProjects(data);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
+  }, [workspace.id]);
+
+  useEffect(() => { fetchProjects(); }, [fetchProjects]);
+
+  if (loading) {
+    return <div className="py-12 text-center text-sm text-gray-400">Loading projects…</div>;
+  }
+
+  if (projects.length === 0) {
+    return (
+      <div className="py-12 flex flex-col items-center text-center">
+        <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center mb-4">
+          <svg className="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+        </div>
+        <p className="text-sm font-medium text-gray-700">No projects yet</p>
+        <p className="text-xs text-gray-400 mt-1">Create your first project to get started.</p>
+        <button
+          onClick={onNewProject}
+          className="mt-4 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors"
+        >
+          + New Project
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-400">{projects.length} project{projects.length !== 1 ? 's' : ''}</p>
+        <button
+          onClick={onNewProject}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors"
+        >
+          + New Project
+        </button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {projects.map((p) => (
+          <ProjectCard
+            key={p.id}
+            project={p}
+            workspaceId={workspace.id}
+            onClick={() => navigate(`/workspace/${workspace.id}/project/${p.id}`)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── WorkspaceArea ─────────────────────────────────────────────────────────────
 
 function WorkspaceArea({ workspace, currentUser, onRename, onDelete, onMemberRemoved }) {
+  const [activeTab, setActiveTab] = useState('projects');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteStatus, setInviteStatus] = useState(null);
   const [inviting, setInviting] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [members, setMembers] = useState(workspace.members || []);
+
+  // New project modal
+  const [showNewProject, setShowNewProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectDesc, setNewProjectDesc] = useState('');
+  const [newProjectDue, setNewProjectDue] = useState('');
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectError, setProjectError] = useState('');
+  const [projectsKey, setProjectsKey] = useState(0);
 
   useEffect(() => {
     setMembers(workspace.members || []);
@@ -139,7 +257,7 @@ function WorkspaceArea({ workspace, currentUser, onRename, onDelete, onMemberRem
       setMembers((prev) => [...prev, data.member]);
       setInviteStatus({ type: 'success', msg: 'Invited!' });
       setInviteEmail('');
-      onMemberRemoved(); // refresh sidebar count
+      onMemberRemoved();
     } catch (err) {
       setInviteStatus({ type: 'error', msg: extractError(err) });
     } finally {
@@ -157,10 +275,40 @@ function WorkspaceArea({ workspace, currentUser, onRename, onDelete, onMemberRem
     }
   };
 
+  const handleCreateProject = async (e) => {
+    e.preventDefault();
+    setProjectBusy(true);
+    setProjectError('');
+    try {
+      await api.post(`/workspaces/${workspace.id}/projects/`, {
+        name: newProjectName.trim(),
+        description: newProjectDesc.trim(),
+        due_date: newProjectDue || null,
+      });
+      setShowNewProject(false);
+      setNewProjectName('');
+      setNewProjectDesc('');
+      setNewProjectDue('');
+      setProjectsKey((k) => k + 1);
+    } catch (err) {
+      setProjectError(extractError(err, 'Failed to create project.'));
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+
+  const openNewProject = () => {
+    setNewProjectName('');
+    setNewProjectDesc('');
+    setNewProjectDue('');
+    setProjectError('');
+    setShowNewProject(true);
+  };
+
   return (
-    <div className="flex-1 overflow-y-auto p-8">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-8">
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Workspace header */}
+      <div className="flex items-start justify-between px-8 pt-8 pb-4 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{workspace.name}</h1>
           <p className="mt-1 text-sm text-gray-400">
@@ -193,66 +341,142 @@ function WorkspaceArea({ workspace, currentUser, onRename, onDelete, onMemberRem
         )}
       </div>
 
-      {/* Members section */}
-      <section className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Members</h2>
+      {/* Tabs */}
+      <div className="flex gap-1 px-8 border-b border-gray-200 flex-shrink-0">
+        {['projects', 'members'].map((tab) => (
           <button
-            onClick={() => { setShowInvite((v) => !v); setInviteStatus(null); }}
-            className="text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2.5 text-sm font-medium capitalize border-b-2 transition-colors -mb-px ${
+              activeTab === tab
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
           >
-            {showInvite ? 'Cancel' : '+ Invite member'}
+            {tab}
           </button>
-        </div>
+        ))}
+      </div>
 
-        {showInvite && (
-          <form onSubmit={handleInvite} className="mb-4 flex gap-2">
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              required
-              autoFocus
-              placeholder="colleague@example.com"
-              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            <button
-              type="submit"
-              disabled={inviting}
-              className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition-colors"
-            >
-              {inviting ? '…' : 'Invite'}
-            </button>
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        {activeTab === 'projects' && (
+          <ProjectsTab
+            key={`${workspace.id}-${projectsKey}`}
+            workspace={workspace}
+            onNewProject={openNewProject}
+          />
+        )}
+
+        {activeTab === 'members' && (
+          <section className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Members</h2>
+              <button
+                onClick={() => { setShowInvite((v) => !v); setInviteStatus(null); }}
+                className="text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+              >
+                {showInvite ? 'Cancel' : '+ Invite member'}
+              </button>
+            </div>
+
+            {showInvite && (
+              <form onSubmit={handleInvite} className="mb-4 flex gap-2">
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  required
+                  autoFocus
+                  placeholder="colleague@example.com"
+                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <button
+                  type="submit"
+                  disabled={inviting}
+                  className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+                >
+                  {inviting ? '…' : 'Invite'}
+                </button>
+              </form>
+            )}
+
+            {inviteStatus && (
+              <div className={`mb-3 rounded-lg px-3 py-2 text-sm ${
+                inviteStatus.type === 'success'
+                  ? 'bg-green-50 border border-green-200 text-green-700'
+                  : 'bg-red-50 border border-red-200 text-red-700'
+              }`}>
+                {inviteStatus.msg}
+              </div>
+            )}
+
+            <div className="divide-y divide-gray-100">
+              {members.map((member) => (
+                <MemberRow
+                  key={member.id}
+                  member={member}
+                  isOwner={member.id === workspace.owner?.id}
+                  canRemove={isOwner && member.id !== workspace.owner?.id}
+                  onRemove={handleRemoveMember}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+
+      {/* New Project Modal */}
+      {showNewProject && (
+        <Modal title="New Project" onClose={() => setShowNewProject(false)}>
+          <form onSubmit={handleCreateProject} className="space-y-4">
+            {projectError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{projectError}</div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Project name</label>
+              <input
+                type="text"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                required
+                autoFocus
+                placeholder="My Project"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description <span className="text-gray-400 font-normal">(optional)</span></label>
+              <textarea
+                value={newProjectDesc}
+                onChange={(e) => setNewProjectDesc(e.target.value)}
+                rows={3}
+                placeholder="What is this project about?"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Due date <span className="text-gray-400 font-normal">(optional)</span></label>
+              <input
+                type="date"
+                value={newProjectDue}
+                onChange={(e) => setNewProjectDue(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setShowNewProject(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button type="submit" disabled={projectBusy}
+                className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition-colors">
+                {projectBusy ? 'Creating…' : 'Create project'}
+              </button>
+            </div>
           </form>
-        )}
-
-        {inviteStatus && (
-          <div className={`mb-3 rounded-lg px-3 py-2 text-sm ${
-            inviteStatus.type === 'success'
-              ? 'bg-green-50 border border-green-200 text-green-700'
-              : 'bg-red-50 border border-red-200 text-red-700'
-          }`}>
-            {inviteStatus.msg}
-          </div>
-        )}
-
-        <div className="divide-y divide-gray-100">
-          {members.map((member) => (
-            <MemberRow
-              key={member.id}
-              member={member}
-              isOwner={member.id === workspace.owner?.id}
-              canRemove={isOwner && member.id !== workspace.owner?.id}
-              onRemove={handleRemoveMember}
-            />
-          ))}
-        </div>
-      </section>
-
-      {/* Boards placeholder */}
-      <section className="bg-white rounded-xl border border-dashed border-gray-200 p-8 text-center">
-        <p className="text-gray-400 text-sm">Boards are coming in Phase 3.</p>
-      </section>
+        </Modal>
+      )}
     </div>
   );
 }

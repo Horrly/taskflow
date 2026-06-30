@@ -1,7 +1,7 @@
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from rest_framework import serializers
-from .models import User, Workspace
+from .models import User, Workspace, Project, TaskList
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -65,3 +65,32 @@ class WorkspaceListSerializer(serializers.ModelSerializer):
 
     def get_member_count(self, obj):
         return obj.members.count()
+
+
+class TaskListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskList
+        fields = ('id', 'name', 'position', 'color')
+        read_only_fields = ('id', 'position')
+
+
+class ProjectListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = ('id', 'name', 'description', 'status', 'due_date', 'created_at')
+        read_only_fields = ('id', 'created_at')
+
+
+class ProjectSerializer(serializers.ModelSerializer):
+    task_lists = TaskListSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Project
+        fields = ('id', 'name', 'description', 'status', 'due_date', 'created_at', 'task_lists')
+        read_only_fields = ('id', 'created_at')
+
+
+class ProjectWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = ('name', 'description', 'status', 'due_date')

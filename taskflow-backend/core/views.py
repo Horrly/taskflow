@@ -1,15 +1,17 @@
 from django.db import transaction
-from django.db.models import F, Max
+from django.db.models import F, Max, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Comment, Label, Project, Task, TaskList, User, Workspace
+from .models import ActivityLog, Comment, Label, Project, Task, TaskList, User, Workspace
 from .permissions import IsWorkspaceMember, IsWorkspaceOwner
 from .serializers import (
+    ActivityLogSerializer,
     CommentSerializer,
     LabelSerializer,
     ProjectListSerializer,
@@ -342,12 +344,14 @@ def list_tasks(request, list_id):
     with transaction.atomic():
         max_pos = tl.tasks.aggregate(m=Max('position'))['m']
         position = 0 if max_pos is None else max_pos + 1
-        task = Task.objects.create(
+        task = Task(
             task_list=tl,
             title=title,
             position=position,
             created_by=request.user,
         )
+        task._current_user = request.user
+        task.save()
     return Response(TaskSerializer(_task_qs().get(pk=task.pk)).data, status=status.HTTP_201_CREATED)
 
 
@@ -405,12 +409,14 @@ def task_detail(request, pk):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        task._current_user = request.user
         task.save()
         if assignee_ids is not None:
             task.assignees.set(assignee_ids)
 
         return Response(TaskDetailSerializer(_task_qs().get(pk=task.pk)).data)
 
+    task._current_user = request.user
     task.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -455,6 +461,7 @@ def task_move(request, pk):
 
     old_list = task.task_list
     old_position = task.position
+    task._current_user = request.user
 
     with transaction.atomic():
         if old_list.id == dest_list.id:
@@ -545,6 +552,7 @@ def task_add_label(request, task_id):
         return Response({'detail': 'label_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
     label = get_object_or_404(Label, pk=label_id, workspace=task.task_list.project.workspace)
+    task._current_user = request.user
     task.labels.add(label)
     return Response(LabelSerializer(task.labels.all(), many=True).data)
 
@@ -558,6 +566,7 @@ def task_remove_label(request, task_id, label_id):
         return err
 
     label = get_object_or_404(Label, pk=label_id)
+    task._current_user = request.user
     task.labels.remove(label)
     return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -616,3 +625,46 @@ def comment_detail(request, pk):
 
     comment.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Activity views ────────────────────────────────────────────────────────────
+
+class ActivityPagination(PageNumberPagination):
+    page_size = 20
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def workspace_activity(request, workspace_id):
+    workspace = get_object_or_404(Workspace, pk=workspace_id)
+    err = _workspace_member_or_403(request, workspace)
+    if err:
+        return err
+
+    qs = workspace.activity_logs.select_related('actor').order_by('-created_at')
+    paginator = ActivityPagination()
+    page = paginator.paginate_queryset(qs, request)
+    return paginator.get_paginated_response(ActivityLogSerializer(page, many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def task_activity(request, task_id):
+    task = get_object_or_404(Task.objects.select_related('task_list__project__workspace'), pk=task_id)
+    err = _workspace_member_or_403(request, task.task_list.project.workspace)
+    if err:
+        return err
+
+    qs = task.activity_logs.select_related('actor').order_by('-created_at')
+    return Response(ActivityLogSerializer(qs, many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_activity(request):
+    qs = ActivityLog.objects.filter(
+        Q(actor=request.user) | Q(task__assignees=request.user)
+    ).select_related('actor').distinct().order_by('-created_at')
+    paginator = ActivityPagination()
+    page = paginator.paginate_queryset(qs, request)
+    return paginator.get_paginated_response(ActivityLogSerializer(page, many=True).data)

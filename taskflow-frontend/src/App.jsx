@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import ProjectBoard from './pages/ProjectBoard';
+import MyActivity from './pages/MyActivity';
 
 function RootRedirect() {
   const { user, loading } = useAuth();
@@ -33,6 +34,14 @@ export default function App() {
             element={
               <PrivateRoute>
                 <ProjectBoard />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/activity"
+            element={
+              <PrivateRoute>
+                <MyActivity />
               </PrivateRoute>
             }
           />

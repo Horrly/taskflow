@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import Comment, Label, Task, User, Workspace
+from .models import ActivityLog, Comment, Label, Task, User, Workspace
 
 
 @admin.register(User)
@@ -36,3 +36,10 @@ class LabelAdmin(admin.ModelAdmin):
 class CommentAdmin(admin.ModelAdmin):
     list_display = ('task', 'author', 'is_edited', 'created_at')
     list_select_related = ('task', 'author')
+
+
+@admin.register(ActivityLog)
+class ActivityLogAdmin(admin.ModelAdmin):
+    list_display = ('verb', 'actor', 'task_title', 'project_name', 'workspace', 'created_at')
+    list_select_related = ('actor', 'workspace', 'task', 'project')
+    list_filter = ('workspace',)

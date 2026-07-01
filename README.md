@@ -154,6 +154,16 @@ App will be available at `http://localhost:5173`
 | PATCH | `/api/comments/{id}/` | Bearer (author) | Edit own comment — sets `is_edited: true` |
 | DELETE | `/api/comments/{id}/` | Bearer (author) | Delete own comment — 403 for non-authors |
 
+### Activity
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/workspaces/{id}/activity/` | Bearer (member) | Workspace-wide activity feed, newest first, paginated (20/page) |
+| GET | `/api/tasks/{id}/activity/` | Bearer (member) | Activity for a single task, newest first |
+| GET | `/api/me/activity/` | Bearer | Personal feed — activity where you're the actor or an assignee, paginated (20/page) |
+
+Activity logs are written automatically via Django signals (task changes, assignees, labels, comments) — there is no endpoint to create them directly.
+
 ---
 
 ## Project Status
@@ -165,6 +175,6 @@ App will be available at `http://localhost:5173`
 | **Phase 3** | Projects & Kanban task lists with drag-and-drop reordering | ✅ Complete |
 | **Phase 4** | Tasks — drag-and-drop cards, slide-out detail panel, priorities, due dates, assignees | ✅ Complete |
 | **Phase 5** | Labels & comments with author-scoped edit/delete | ✅ Complete |
-| Phase 6 | Real-time updates (WebSockets / Django Channels) | Pending |
+| **Phase 6** | Activity log & notifications — signal-driven activity feed (workspace, task, personal) | ✅ Complete |
 | Phase 7 | File attachments & avatar uploads | Pending |
-| Phase 8 | Notifications & activity feed | Pending |
+| Phase 8 | Unread indicators & real-time notification alerts | Pending |

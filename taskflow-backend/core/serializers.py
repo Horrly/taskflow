@@ -1,7 +1,8 @@
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.utils.timesince import timesince
 from rest_framework import serializers
-from .models import Comment, Label, Task, User, Workspace, Project, TaskList
+from .models import ActivityLog, Comment, Label, Task, User, Workspace, Project, TaskList
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -159,3 +160,26 @@ class ProjectWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = ('name', 'description', 'status', 'due_date')
+
+
+class ActivityActorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('first_name', 'last_name', 'avatar')
+
+
+class ActivityLogSerializer(serializers.ModelSerializer):
+    actor = ActivityActorSerializer(read_only=True)
+    human_time = serializers.SerializerMethodField()
+    task_id = serializers.IntegerField(read_only=True)
+    project_id = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = ActivityLog
+        fields = (
+            'id', 'actor', 'verb', 'task_id', 'project_id', 'task_title',
+            'project_name', 'detail', 'created_at', 'human_time',
+        )
+
+    def get_human_time(self, obj):
+        return f"{timesince(obj.created_at)} ago"

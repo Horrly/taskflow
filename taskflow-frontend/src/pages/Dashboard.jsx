@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import Modal from '../components/Modal';
 import Avatar from '../components/Avatar';
+import ActivityFeed from '../components/ActivityFeed';
 
 const STATUS_BADGE = {
   ACTIVE: 'bg-green-100 text-green-700',
@@ -223,6 +224,7 @@ function ProjectsTab({ workspace, onNewProject }) {
 // ── WorkspaceArea ─────────────────────────────────────────────────────────────
 
 function WorkspaceArea({ workspace, currentUser, onRename, onDelete, onMemberRemoved }) {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('projects');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteStatus, setInviteStatus] = useState(null);
@@ -343,7 +345,7 @@ function WorkspaceArea({ workspace, currentUser, onRename, onDelete, onMemberRem
 
       {/* Tabs */}
       <div className="flex gap-1 px-8 border-b border-gray-200 flex-shrink-0">
-        {['projects', 'members'].map((tab) => (
+        {['projects', 'members', 'activity'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -422,6 +424,18 @@ function WorkspaceArea({ workspace, currentUser, onRename, onDelete, onMemberRem
                 />
               ))}
             </div>
+          </section>
+        )}
+
+        {activeTab === 'activity' && (
+          <section className="bg-white rounded-xl border border-gray-200 p-6">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">Activity</h2>
+            <ActivityFeed
+              key={workspace.id}
+              fetchUrl={`/workspaces/${workspace.id}/activity/`}
+              showTaskTitle
+              onEntryClick={(entry) => navigate(`/workspace/${workspace.id}/project/${entry.project_id}?task=${entry.task_id}`)}
+            />
           </section>
         )}
       </div>
@@ -605,6 +619,12 @@ export default function Dashboard() {
       <header className="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center justify-between flex-shrink-0">
         <span className="text-xl font-bold text-indigo-600 tracking-tight">TaskFlow</span>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/activity')}
+            className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            My Activity
+          </button>
           {user && <Avatar user={user} size="sm" />}
           <span className="text-sm text-gray-600">{user?.first_name || user?.email}</span>
           <button

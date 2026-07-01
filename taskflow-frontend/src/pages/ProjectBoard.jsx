@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import api from '../api/axios';
 import Modal from '../components/Modal';
@@ -319,6 +319,7 @@ function KanbanColumn({ col, provided, snapshot, onRename, onColor, onDelete, on
 export default function ProjectBoard() {
   const { workspaceId, projectId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [project, setProject] = useState(null);
   const [columns, setColumns] = useState([]);
@@ -379,6 +380,13 @@ export default function ProjectBoard() {
   }, [projectId, workspaceId]);
 
   useEffect(() => { fetchProject(); }, [fetchProject]);
+
+  // Deep link: ?task=<id> auto-opens that task's slide-out panel on load.
+  useEffect(() => {
+    const taskParam = searchParams.get('task');
+    if (taskParam) setSelectedTaskId(parseInt(taskParam, 10));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Drag & drop ─────────────────────────────────────────────────────────────
 

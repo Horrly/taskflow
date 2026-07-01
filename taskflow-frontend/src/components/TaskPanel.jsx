@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../api/axios';
 import Avatar from './Avatar';
+import ActivityFeed from './ActivityFeed';
 
 const PRIORITY_META = {
   NONE:   { label: 'None',   color: '#9CA3AF' },
@@ -302,6 +303,8 @@ export default function TaskPanel({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [visible, setVisible] = useState(false);
+  const [activityTick, setActivityTick] = useState(0);
+  const bumpActivity = () => setActivityTick((t) => t + 1);
 
   const titleInputRef = useRef(null);
   const labelPickerRef = useRef(null);
@@ -349,6 +352,7 @@ export default function TaskPanel({
       const { data } = await api.patch(`/tasks/${taskId}/`, updates);
       setTask(data);
       onTaskUpdate(data);
+      bumpActivity();
     } catch { /* silently ignore — field stays as-is */ }
   }, [taskId, onTaskUpdate]);
 
@@ -385,6 +389,7 @@ export default function TaskPanel({
   const handleTaskLabelsChange = (newLabels) => {
     setTaskLabels(newLabels);
     onTaskUpdate({ id: taskId, labels: newLabels });
+    bumpActivity();
   };
 
   // Comments
@@ -398,6 +403,7 @@ export default function TaskPanel({
       setComments(next);
       setNewComment('');
       onCommentCountChange(taskId, next.length);
+      bumpActivity();
       setTimeout(() => commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
     } catch { /* ignore */ } finally {
       setPostingComment(false);
@@ -414,6 +420,7 @@ export default function TaskPanel({
     const next = comments.filter((c) => c.id !== commentId);
     setComments(next);
     onCommentCountChange(taskId, next.length);
+    bumpActivity();
   };
 
   const handleDeleteTask = async () => {
@@ -683,6 +690,17 @@ export default function TaskPanel({
                   {postingComment ? 'Posting…' : 'Post comment'}
                 </button>
               </div>
+            </div>
+
+            {/* Activity */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                Activity
+              </label>
+              <ActivityFeed
+                fetchUrl={`/tasks/${taskId}/activity/`}
+                refreshToken={activityTick}
+              />
             </div>
 
           </div>

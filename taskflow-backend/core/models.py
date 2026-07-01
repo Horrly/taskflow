@@ -66,6 +66,22 @@ class TaskList(models.Model):
         return self.name
 
 
+class Label(models.Model):
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name='labels')
+    name = models.CharField(max_length=100)
+    color = models.CharField(max_length=20, default='#6366F1')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name='created_labels'
+    )
+
+    class Meta:
+        ordering = ['name']
+        unique_together = [('workspace', 'name')]
+
+    def __str__(self):
+        return self.name
+
+
 class Task(models.Model):
     PRIORITY_NONE = 'NONE'
     PRIORITY_LOW = 'LOW'
@@ -84,6 +100,7 @@ class Task(models.Model):
     title = models.CharField(max_length=500)
     description = models.TextField(blank=True)
     assignees = models.ManyToManyField(User, blank=True, related_name='assigned_tasks')
+    labels = models.ManyToManyField(Label, blank=True, related_name='tasks')
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default=PRIORITY_NONE)
     due_date = models.DateField(null=True, blank=True)
     position = models.IntegerField(default=0)
@@ -98,3 +115,18 @@ class Task(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class Comment(models.Model):
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='comments')
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='task_comments')
+    body = models.TextField()
+    is_edited = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Comment by {self.author} on task {self.task_id}"

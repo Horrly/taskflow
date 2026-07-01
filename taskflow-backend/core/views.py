@@ -7,9 +7,11 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Project, Task, TaskList, User, Workspace
+from .models import Comment, Label, Project, Task, TaskList, User, Workspace
 from .permissions import IsWorkspaceMember, IsWorkspaceOwner
 from .serializers import (
+    CommentSerializer,
+    LabelSerializer,
     ProjectListSerializer,
     ProjectSerializer,
     ProjectWriteSerializer,
@@ -108,8 +110,7 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def members(self, request, pk=None):
         workspace = self.get_object()
-        serializer = WorkspaceMemberSerializer(workspace.members.all(), many=True)
-        return Response(serializer.data)
+        return Response(WorkspaceMemberSerializer(workspace.members.all(), many=True).data)
 
     @action(detail=True, methods=['post'])
     def invite(self, request, pk=None):
@@ -146,7 +147,7 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
         except User.DoesNotExist:
             return Response({'detail': 'User not found in this workspace.'}, status=status.HTTP_404_NOT_FOUND)
         if target.pk == workspace.owner_id:
-            return Response({'detail': "Cannot remove the workspace owner."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'Cannot remove the workspace owner.'}, status=status.HTTP_400_BAD_REQUEST)
         workspace.members.remove(target)
         return Response({'detail': 'Member removed.'}, status=status.HTTP_200_OK)
 
@@ -161,7 +162,8 @@ def _workspace_member_or_403(request, workspace):
 
 def _project_qs():
     return Project.objects.select_related('workspace').prefetch_related(
-        'task_lists__tasks__assignees'
+        'task_lists__tasks__assignees',
+        'task_lists__tasks__labels',
     )
 
 
@@ -215,7 +217,9 @@ def project_detail(request, pk):
 # ── TaskList views ────────────────────────────────────────────────────────────
 
 def _tasklist_qs():
-    return TaskList.objects.select_related('project__workspace').prefetch_related('tasks__assignees')
+    return TaskList.objects.select_related('project__workspace').prefetch_related(
+        'tasks__assignees', 'tasks__labels'
+    )
 
 
 @api_view(['GET', 'POST'])
@@ -227,7 +231,7 @@ def project_lists(request, pk):
         return err
 
     if request.method == 'GET':
-        lists = project.task_lists.prefetch_related('tasks__assignees').order_by('position')
+        lists = project.task_lists.prefetch_related('tasks__assignees', 'tasks__labels').order_by('position')
         return Response(TaskListSerializer(lists, many=True).data)
 
     name = request.data.get('name', '').strip()
@@ -307,7 +311,7 @@ def tasklist_reorder(request, pk):
             tl.position = new_position
             tl.save()
 
-    lists = project.task_lists.prefetch_related('tasks__assignees').order_by('position')
+    lists = project.task_lists.prefetch_related('tasks__assignees', 'tasks__labels').order_by('position')
     return Response(TaskListSerializer(lists, many=True).data)
 
 
@@ -316,7 +320,7 @@ def tasklist_reorder(request, pk):
 def _task_qs():
     return Task.objects.select_related(
         'task_list__project__workspace', 'created_by'
-    ).prefetch_related('assignees')
+    ).prefetch_related('assignees', 'labels')
 
 
 @api_view(['GET', 'POST'])
@@ -328,7 +332,7 @@ def list_tasks(request, list_id):
         return err
 
     if request.method == 'GET':
-        tasks = tl.tasks.prefetch_related('assignees').order_by('position')
+        tasks = tl.tasks.prefetch_related('assignees', 'labels').order_by('position')
         return Response(TaskSerializer(tasks, many=True).data)
 
     title = request.data.get('title', '').strip()
@@ -454,7 +458,6 @@ def task_move(request, pk):
 
     with transaction.atomic():
         if old_list.id == dest_list.id:
-            # Reorder within the same list
             if new_position != old_position:
                 if new_position < old_position:
                     Task.objects.filter(
@@ -471,21 +474,145 @@ def task_move(request, pk):
                 task.position = new_position
                 task.save()
         else:
-            # Close the gap in the source list
             Task.objects.filter(
                 task_list=old_list,
                 position__gt=old_position,
             ).update(position=F('position') - 1)
-
-            # Make room in the destination list
             Task.objects.filter(
                 task_list=dest_list,
                 position__gte=new_position,
             ).update(position=F('position') + 1)
-
-            # Move the task
             task.task_list = dest_list
             task.position = new_position
             task.save()
 
     return Response(TaskSerializer(_task_qs().get(pk=task.pk)).data)
+
+
+# ── Label views ───────────────────────────────────────────────────────────────
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def workspace_labels(request, workspace_id):
+    workspace = get_object_or_404(Workspace, pk=workspace_id)
+    err = _workspace_member_or_403(request, workspace)
+    if err:
+        return err
+
+    if request.method == 'GET':
+        return Response(LabelSerializer(workspace.labels.all(), many=True).data)
+
+    serializer = LabelSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    name = serializer.validated_data['name']
+    if workspace.labels.filter(name__iexact=name).exists():
+        return Response(
+            {'detail': f'A label named "{name}" already exists in this workspace.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    label = serializer.save(workspace=workspace, created_by=request.user)
+    return Response(LabelSerializer(label).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def label_detail(request, pk):
+    label = get_object_or_404(Label.objects.select_related('workspace'), pk=pk)
+    err = _workspace_member_or_403(request, label.workspace)
+    if err:
+        return err
+
+    if request.method == 'PATCH':
+        serializer = LabelSerializer(label, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    label.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def task_add_label(request, task_id):
+    task = get_object_or_404(Task.objects.select_related('task_list__project__workspace'), pk=task_id)
+    err = _workspace_member_or_403(request, task.task_list.project.workspace)
+    if err:
+        return err
+
+    label_id = request.data.get('label_id')
+    if not label_id:
+        return Response({'detail': 'label_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    label = get_object_or_404(Label, pk=label_id, workspace=task.task_list.project.workspace)
+    task.labels.add(label)
+    return Response(LabelSerializer(task.labels.all(), many=True).data)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def task_remove_label(request, task_id, label_id):
+    task = get_object_or_404(Task.objects.select_related('task_list__project__workspace'), pk=task_id)
+    err = _workspace_member_or_403(request, task.task_list.project.workspace)
+    if err:
+        return err
+
+    label = get_object_or_404(Label, pk=label_id)
+    task.labels.remove(label)
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Comment views ─────────────────────────────────────────────────────────────
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def task_comments(request, task_id):
+    task = get_object_or_404(Task.objects.select_related('task_list__project__workspace'), pk=task_id)
+    err = _workspace_member_or_403(request, task.task_list.project.workspace)
+    if err:
+        return err
+
+    if request.method == 'GET':
+        comments = task.comments.select_related('author').order_by('created_at')
+        return Response(CommentSerializer(comments, many=True, context={'request': request}).data)
+
+    body = request.data.get('body', '').strip()
+    if not body:
+        return Response({'detail': 'body is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    comment = Comment.objects.create(task=task, author=request.user, body=body)
+    comment.author = request.user  # avoid re-fetch
+    return Response(
+        CommentSerializer(comment, context={'request': request}).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(['PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def comment_detail(request, pk):
+    comment = get_object_or_404(
+        Comment.objects.select_related('task__task_list__project__workspace', 'author'),
+        pk=pk,
+    )
+    err = _workspace_member_or_403(request, comment.task.task_list.project.workspace)
+    if err:
+        return err
+
+    if comment.author_id != request.user.pk:
+        return Response(
+            {'detail': 'You can only edit or delete your own comments.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if request.method == 'PATCH':
+        body = request.data.get('body', '').strip()
+        if not body:
+            return Response({'detail': 'body is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        comment.body = body
+        comment.is_edited = True
+        comment.save()
+        return Response(CommentSerializer(comment, context={'request': request}).data)
+
+    comment.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)

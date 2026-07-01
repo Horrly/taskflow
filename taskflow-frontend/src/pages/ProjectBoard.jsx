@@ -4,6 +4,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import api from '../api/axios';
 import Modal from '../components/Modal';
 import Avatar from '../components/Avatar';
+import TaskPanel from '../components/TaskPanel';
 
 function extractError(err, fallback = 'Something went wrong.') {
   return err?.response?.data?.detail || fallback;
@@ -119,12 +120,35 @@ function ColumnMenu({ onRename, onColor, onDelete }) {
 function TaskCard({ task, onClick }) {
   const overdue = isOverdue(task.due_date);
   const pm = PRIORITY_META[task.priority] || PRIORITY_META.NONE;
+  const labels = task.labels || [];
+  const shownLabels = labels.slice(0, 3);
+  const extraLabels = labels.length - shownLabels.length;
 
   return (
     <div
       onClick={onClick}
       className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all select-none"
     >
+      {/* Label chips */}
+      {labels.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-1.5">
+          {shownLabels.map((l) => (
+            <span
+              key={l.id}
+              className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white leading-tight"
+              style={{ backgroundColor: l.color }}
+            >
+              {l.name}
+            </span>
+          ))}
+          {extraLabels > 0 && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600 leading-tight">
+              +{extraLabels}
+            </span>
+          )}
+        </div>
+      )}
+
       {task.priority !== 'NONE' && (
         <div className="flex items-center gap-1.5 mb-1.5">
           <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: pm.color }} />
@@ -134,13 +158,24 @@ function TaskCard({ task, onClick }) {
 
       <p className="text-sm text-gray-900 font-medium leading-snug break-words">{task.title}</p>
 
-      {(task.due_date || task.assignees?.length > 0) && (
+      {(task.due_date || task.assignees?.length > 0 || task.comment_count > 0) && (
         <div className="mt-2 flex items-center justify-between gap-2">
-          {task.due_date ? (
-            <span className={`text-xs font-medium ${overdue ? 'text-red-500' : 'text-gray-400'}`}>
-              {overdue && '⚠ '}{fmtDate(task.due_date)}
-            </span>
-          ) : <span />}
+          <div className="flex items-center gap-2">
+            {task.due_date && (
+              <span className={`text-xs font-medium ${overdue ? 'text-red-500' : 'text-gray-400'}`}>
+                {overdue && '⚠ '}{fmtDate(task.due_date)}
+              </span>
+            )}
+            {task.comment_count > 0 && (
+              <span className="flex items-center gap-0.5 text-xs text-gray-400">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                {task.comment_count}
+              </span>
+            )}
+          </div>
 
           {task.assignees?.length > 0 && (
             <div className="flex -space-x-1.5 flex-shrink-0">
@@ -279,312 +314,6 @@ function KanbanColumn({ col, provided, snapshot, onRename, onColor, onDelete, on
   );
 }
 
-// ── TaskPanel ─────────────────────────────────────────────────────────────────
-
-function TaskPanel({ taskId, members, onClose, onTaskUpdate, onTaskDelete }) {
-  const [task, setTask] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  // Editable fields
-  const [title, setTitle] = useState('');
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState('NONE');
-  const [dueDate, setDueDate] = useState('');
-  const [assignees, setAssignees] = useState([]);
-
-  // UI state
-  const [showMemberPicker, setShowMemberPicker] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const titleInputRef = useRef(null);
-  const panelRef = useRef(null);
-  const memberPickerRef = useRef(null);
-
-  // Slide-in animation
-  useEffect(() => {
-    requestAnimationFrame(() => setVisible(true));
-  }, []);
-
-  // Fetch full task detail
-  useEffect(() => {
-    setLoading(true);
-    api.get(`/tasks/${taskId}/`).then(({ data }) => {
-      setTask(data);
-      setTitle(data.title);
-      setDescription(data.description || '');
-      setPriority(data.priority);
-      setDueDate(data.due_date || '');
-      setAssignees(data.assignees || []);
-    }).finally(() => setLoading(false));
-  }, [taskId]);
-
-  // Close member picker on outside click
-  useEffect(() => {
-    if (!showMemberPicker) return;
-    const handler = (e) => {
-      if (!memberPickerRef.current?.contains(e.target)) setShowMemberPicker(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showMemberPicker]);
-
-  const patch = useCallback(async (updates) => {
-    try {
-      const { data } = await api.patch(`/tasks/${taskId}/`, updates);
-      setTask(data);
-      onTaskUpdate(data);
-      return data;
-    } catch {
-      // silently ignore — field reverts on blur
-    }
-  }, [taskId, onTaskUpdate]);
-
-  const handleTitleSave = async () => {
-    setEditingTitle(false);
-    const t = title.trim();
-    if (!t) { setTitle(task?.title || ''); return; }
-    if (t !== task?.title) await patch({ title: t });
-  };
-
-  const handleDescriptionBlur = async () => {
-    if (description !== (task?.description || '')) {
-      await patch({ description });
-    }
-  };
-
-  const handlePriorityChange = async (e) => {
-    const v = e.target.value;
-    setPriority(v);
-    await patch({ priority: v });
-  };
-
-  const handleDueDateChange = async (e) => {
-    const v = e.target.value;
-    setDueDate(v);
-    await patch({ due_date: v || null });
-  };
-
-  const toggleAssignee = async (member) => {
-    const already = assignees.some((a) => a.id === member.id);
-    const next = already ? assignees.filter((a) => a.id !== member.id) : [...assignees, member];
-    setAssignees(next);
-    await patch({ assignees: next.map((a) => a.id) });
-  };
-
-  const handleDelete = async () => {
-    setDeleting(true);
-    try {
-      await api.delete(`/tasks/${taskId}/`);
-      onTaskDelete(taskId, task?.task_list_id);
-      onClose();
-    } catch {
-      setDeleting(false);
-    }
-  };
-
-  const overdue = isOverdue(task?.due_date);
-
-  return (
-    <>
-      {/* Semi-transparent overlay */}
-      <div className="fixed inset-0 bg-black/20 z-30" onClick={onClose} />
-
-      {/* Slide-out panel */}
-      <div
-        ref={panelRef}
-        className={`fixed top-0 right-0 bottom-0 w-[420px] bg-white shadow-2xl z-40 flex flex-col
-          transform transition-transform duration-200 ease-out
-          ${visible ? 'translate-x-0' : 'translate-x-full'}`}
-      >
-        {/* Panel header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Task detail</span>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-sm text-gray-400">Loading…</p>
-          </div>
-        ) : (
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-
-            {/* Title */}
-            <div>
-              {editingTitle ? (
-                <input
-                  ref={titleInputRef}
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  onBlur={handleTitleSave}
-                  onKeyDown={(e) => { if (e.key === 'Enter') titleInputRef.current?.blur(); if (e.key === 'Escape') { setTitle(task?.title || ''); setEditingTitle(false); } }}
-                  className="w-full text-lg font-bold text-gray-900 border-b-2 border-indigo-400 outline-none bg-transparent py-0.5"
-                  autoFocus
-                />
-              ) : (
-                <h2
-                  onClick={() => setEditingTitle(true)}
-                  className="text-lg font-bold text-gray-900 cursor-text hover:bg-gray-50 rounded px-1 -mx-1 py-0.5 transition-colors"
-                  title="Click to edit"
-                >
-                  {title}
-                </h2>
-              )}
-            </div>
-
-            {/* Priority */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Priority</label>
-              <select
-                value={priority}
-                onChange={handlePriorityChange}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                style={{ color: PRIORITY_META[priority]?.color }}
-              >
-                {Object.entries(PRIORITY_META).map(([k, v]) => (
-                  <option key={k} value={k} style={{ color: v.color }}>{v.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Due date */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Due date</label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={handleDueDateChange}
-                className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400 ${
-                  overdue && dueDate
-                    ? 'border-red-300 text-red-600 focus:border-red-400'
-                    : 'border-gray-200 text-gray-900 focus:border-indigo-400'
-                }`}
-              />
-              {overdue && dueDate && (
-                <p className="text-xs text-red-500 mt-1">This task is overdue</p>
-              )}
-            </div>
-
-            {/* Assignees */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Assignees</label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {assignees.map((u) => (
-                  <div key={u.id} className="flex items-center gap-1.5 bg-gray-100 rounded-full pl-1 pr-2.5 py-0.5">
-                    <Avatar user={u} size="sm" />
-                    <span className="text-xs text-gray-700">{u.first_name || u.email}</span>
-                    <button
-                      onClick={() => toggleAssignee(u)}
-                      className="text-gray-400 hover:text-gray-700 ml-0.5 text-xs leading-none"
-                    >×</button>
-                  </div>
-                ))}
-              </div>
-              <div ref={memberPickerRef} className="relative">
-                <button
-                  onClick={() => setShowMemberPicker((v) => !v)}
-                  className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700 font-medium"
-                >
-                  <span className="w-5 h-5 rounded-full border-2 border-dashed border-indigo-400 flex items-center justify-center text-xs leading-none">+</span>
-                  Add assignee
-                </button>
-                {showMemberPicker && (
-                  <div className="absolute top-8 left-0 z-50 w-56 bg-white border border-gray-200 rounded-xl shadow-xl py-1 max-h-48 overflow-y-auto">
-                    {members.length === 0 && (
-                      <p className="text-xs text-gray-400 px-3 py-2">No members found</p>
-                    )}
-                    {members.map((m) => {
-                      const assigned = assignees.some((a) => a.id === m.id);
-                      return (
-                        <button
-                          key={m.id}
-                          onClick={() => toggleAssignee(m)}
-                          className={`w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors ${assigned ? 'bg-indigo-50' : ''}`}
-                        >
-                          <Avatar user={m} size="sm" />
-                          <div className="flex-1 text-left min-w-0">
-                            <p className="text-sm text-gray-900 truncate">
-                              {(m.first_name + ' ' + m.last_name).trim() || m.email}
-                            </p>
-                          </div>
-                          {assigned && (
-                            <svg className="w-4 h-4 text-indigo-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Description */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Description</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                onBlur={handleDescriptionBlur}
-                rows={4}
-                placeholder="Add a description…"
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 resize-none"
-              />
-            </div>
-
-          </div>
-        )}
-
-        {/* Footer: delete */}
-        {!loading && (
-          <div className="px-5 py-4 border-t border-gray-100">
-            {confirmDelete ? (
-              <div className="flex items-center gap-2">
-                <p className="text-sm text-gray-600 flex-1">Delete this task?</p>
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="px-3 py-1.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-60"
-                >
-                  {deleting ? 'Deleting…' : 'Delete'}
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-2 text-sm text-red-500 hover:text-red-700 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                Delete task
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </>
-  );
-}
-
 // ── ProjectBoard (page) ───────────────────────────────────────────────────────
 
 export default function ProjectBoard() {
@@ -594,6 +323,7 @@ export default function ProjectBoard() {
   const [project, setProject] = useState(null);
   const [columns, setColumns] = useState([]);
   const [members, setMembers] = useState([]);
+  const [workspaceLabels, setWorkspaceLabels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastError, setToastError] = useState('');
@@ -632,13 +362,15 @@ export default function ProjectBoard() {
   const fetchProject = useCallback(async () => {
     setLoading(true);
     try {
-      const [projectRes, membersRes] = await Promise.all([
+      const [projectRes, membersRes, labelsRes] = await Promise.all([
         api.get(`/projects/${projectId}/`),
         api.get(`/workspaces/${workspaceId}/members/`),
+        api.get(`/workspaces/${workspaceId}/labels/`),
       ]);
       setProject(projectRes.data);
       setColumns(projectRes.data.task_lists || []);
       setMembers(membersRes.data);
+      setWorkspaceLabels(labelsRes.data);
     } catch {
       setError('Failed to load project.');
     } finally {
@@ -723,6 +455,32 @@ export default function ProjectBoard() {
       if (taskListId && col.id !== taskListId) return col;
       return { ...col, tasks: (col.tasks || []).filter((t) => t.id !== taskId) };
     }));
+  }, []);
+
+  const handleCommentCountChange = useCallback((taskId, count) => {
+    setColumns((prev) => prev.map((col) => ({
+      ...col,
+      tasks: (col.tasks || []).map((t) =>
+        t.id === taskId ? { ...t, comment_count: count } : t
+      ),
+    })));
+  }, []);
+
+  const handleLabelCreated = useCallback((label) => {
+    setWorkspaceLabels((prev) =>
+      [...prev, label].sort((a, b) => a.name.localeCompare(b.name))
+    );
+  }, []);
+
+  const handleLabelDeleted = useCallback((labelId) => {
+    setWorkspaceLabels((prev) => prev.filter((l) => l.id !== labelId));
+    setColumns((prev) => prev.map((col) => ({
+      ...col,
+      tasks: (col.tasks || []).map((t) => ({
+        ...t,
+        labels: (t.labels || []).filter((l) => l.id !== labelId),
+      })),
+    })));
   }, []);
 
   // ── Edit project ─────────────────────────────────────────────────────────────
@@ -964,10 +722,15 @@ export default function ProjectBoard() {
       {selectedTaskId !== null && (
         <TaskPanel
           taskId={selectedTaskId}
+          workspaceId={workspaceId}
           members={members}
+          workspaceLabels={workspaceLabels}
           onClose={() => setSelectedTaskId(null)}
           onTaskUpdate={handleTaskUpdate}
           onTaskDelete={handleTaskDelete}
+          onCommentCountChange={handleCommentCountChange}
+          onLabelCreated={handleLabelCreated}
+          onLabelDeleted={handleLabelDeleted}
         />
       )}
 

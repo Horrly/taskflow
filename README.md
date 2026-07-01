@@ -129,10 +129,30 @@ App will be available at `http://localhost:5173`
 |--------|------|------|-------------|
 | GET | `/api/lists/{id}/tasks/` | Bearer (member) | List tasks in a column, ordered by position |
 | POST | `/api/lists/{id}/tasks/` | Bearer (member) | Quick-create a task `{ "title": "..." }` |
-| GET | `/api/tasks/{id}/` | Bearer (member) | Full task detail with description, assignees |
+| GET | `/api/tasks/{id}/` | Bearer (member) | Full task detail with description, assignees, labels |
 | PATCH | `/api/tasks/{id}/` | Bearer (member) | Update title, description, priority, due_date, assignees (list of IDs) |
 | DELETE | `/api/tasks/{id}/` | Bearer (member) | Delete task |
 | PATCH | `/api/tasks/{id}/move/` | Bearer (member) | Move task: `{ "task_list_id": N, "position": N }` — re-sequences both source and dest columns atomically |
+
+### Labels
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/workspaces/{id}/labels/` | Bearer (member) | List workspace labels |
+| POST | `/api/workspaces/{id}/labels/` | Bearer (member) | Create label `{ "name": "...", "color": "#HEX" }` — name must be unique per workspace |
+| PATCH | `/api/labels/{id}/` | Bearer (member) | Update label name or color |
+| DELETE | `/api/labels/{id}/` | Bearer (member) | Delete label (removes from all tasks) |
+| POST | `/api/tasks/{id}/labels/` | Bearer (member) | Attach label to task `{ "label_id": N }` |
+| DELETE | `/api/tasks/{id}/labels/{label_id}/` | Bearer (member) | Detach label from task |
+
+### Comments
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/tasks/{id}/comments/` | Bearer (member) | List task comments, oldest first |
+| POST | `/api/tasks/{id}/comments/` | Bearer (member) | Post a comment `{ "body": "..." }` |
+| PATCH | `/api/comments/{id}/` | Bearer (author) | Edit own comment — sets `is_edited: true` |
+| DELETE | `/api/comments/{id}/` | Bearer (author) | Delete own comment — 403 for non-authors |
 
 ---
 
@@ -144,7 +164,7 @@ App will be available at `http://localhost:5173`
 | **Phase 2** | Workspaces with invite-by-email | ✅ Complete |
 | **Phase 3** | Projects & Kanban task lists with drag-and-drop reordering | ✅ Complete |
 | **Phase 4** | Tasks — drag-and-drop cards, slide-out detail panel, priorities, due dates, assignees | ✅ Complete |
-| Phase 5 | Team members & granular permissions | Pending |
+| **Phase 5** | Labels & comments with author-scoped edit/delete | ✅ Complete |
 | Phase 6 | Real-time updates (WebSockets / Django Channels) | Pending |
 | Phase 7 | File attachments & avatar uploads | Pending |
 | Phase 8 | Notifications & activity feed | Pending |

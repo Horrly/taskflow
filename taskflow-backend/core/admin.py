@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import Task, User, Workspace
+from .models import Comment, Label, Task, User, Workspace
 
 
 @admin.register(User)
@@ -23,4 +23,16 @@ class WorkspaceAdmin(admin.ModelAdmin):
 class TaskAdmin(admin.ModelAdmin):
     list_display = ('title', 'task_list', 'priority', 'due_date', 'position', 'created_at')
     list_select_related = ('task_list',)
-    filter_horizontal = ('assignees',)
+    filter_horizontal = ('assignees', 'labels')
+
+
+@admin.register(Label)
+class LabelAdmin(admin.ModelAdmin):
+    list_display = ('name', 'color', 'workspace', 'created_by')
+    list_select_related = ('workspace', 'created_by')
+
+
+@admin.register(Comment)
+class CommentAdmin(admin.ModelAdmin):
+    list_display = ('task', 'author', 'is_edited', 'created_at')
+    list_select_related = ('task', 'author')

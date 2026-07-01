@@ -1,6 +1,9 @@
+from datetime import date, timedelta
+
 from django.db import transaction
-from django.db.models import F, Max, Q
+from django.db.models import Count, F, Max, Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
@@ -14,6 +17,7 @@ from .serializers import (
     ActivityLogSerializer,
     CommentSerializer,
     LabelSerializer,
+    MyTaskSerializer,
     ProjectListSerializer,
     ProjectSerializer,
     ProjectWriteSerializer,
@@ -162,6 +166,12 @@ def _workspace_member_or_403(request, workspace):
     return None
 
 
+def _overdue_q(today):
+    # Approximation: no formal "completed" flag yet, so a task in a list
+    # named "Done" is treated as not overdue regardless of due_date.
+    return Q(due_date__lt=today) & ~Q(task_list__name__iexact='done')
+
+
 def _project_qs():
     return Project.objects.select_related('workspace').prefetch_related(
         'task_lists__tasks__assignees',
@@ -178,7 +188,14 @@ def workspace_projects(request, workspace_id):
         return err
 
     if request.method == 'GET':
-        projects = workspace.projects.order_by('-created_at')
+        projects = workspace.projects.annotate(
+            total_tasks=Count('task_lists__tasks', distinct=True),
+            completed_tasks=Count(
+                'task_lists__tasks',
+                filter=Q(task_lists__name__iexact='done'),
+                distinct=True,
+            ),
+        ).order_by('-created_at')
         return Response(ProjectListSerializer(projects, many=True).data)
 
     serializer = ProjectWriteSerializer(data=request.data)
@@ -668,3 +685,93 @@ def my_activity(request):
     paginator = ActivityPagination()
     page = paginator.paginate_queryset(qs, request)
     return paginator.get_paginated_response(ActivityLogSerializer(page, many=True).data)
+
+
+# ── My Tasks / Dashboard views ────────────────────────────────────────────────
+
+class MyTasksPagination(PageNumberPagination):
+    page_size = 30
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_tasks(request):
+    params = request.query_params
+    qs = Task.objects.filter(assignees=request.user).select_related(
+        'task_list__project__workspace'
+    ).prefetch_related('assignees', 'labels').annotate(
+        comment_count=Count('comments', distinct=True),
+    )
+
+    priority = params.get('priority')
+    if priority:
+        # Accepts a single value or a comma-separated list (?priority=LOW,HIGH)
+        # so the frontend's multi-select priority checkboxes can filter in one call.
+        values = [p.strip() for p in priority.split(',') if p.strip()]
+        valid = [c[0] for c in Task.PRIORITY_CHOICES]
+        invalid = [p for p in values if p not in valid]
+        if invalid:
+            return Response(
+                {'detail': f'Invalid priority value(s): {", ".join(invalid)}. Choose from: {", ".join(valid)}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        qs = qs.filter(priority__in=values)
+
+    if params.get('overdue') == 'true':
+        qs = qs.filter(_overdue_q(timezone.localdate()))
+
+    for param, lookup in (('due_before', 'due_date__lte'), ('due_after', 'due_date__gte')):
+        raw = params.get(param)
+        if raw:
+            try:
+                parsed = date.fromisoformat(raw)
+            except ValueError:
+                return Response(
+                    {'detail': f'{param} must be in YYYY-MM-DD format.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            qs = qs.filter(**{lookup: parsed})
+
+    label_id = params.get('label')
+    if label_id:
+        qs = qs.filter(labels__id=label_id)
+
+    workspace_id = params.get('workspace')
+    if workspace_id:
+        qs = qs.filter(task_list__project__workspace_id=workspace_id)
+
+    project_id = params.get('project')
+    if project_id:
+        qs = qs.filter(task_list__project_id=project_id)
+
+    qs = qs.distinct().order_by('-created_at')
+
+    paginator = MyTasksPagination()
+    page = paginator.paginate_queryset(qs, request)
+    return paginator.get_paginated_response(MyTaskSerializer(page, many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_stats(request):
+    today = timezone.localdate()
+    week_end = today + timedelta(days=7)
+
+    aggregates = Task.objects.filter(assignees=request.user).aggregate(
+        total_assigned=Count('id', distinct=True),
+        overdue=Count('id', filter=_overdue_q(today), distinct=True),
+        due_today=Count('id', filter=Q(due_date=today), distinct=True),
+        due_this_week=Count(
+            'id', filter=Q(due_date__gte=today, due_date__lte=week_end), distinct=True,
+        ),
+    )
+
+    week_ago = timezone.now() - timedelta(days=7)
+    aggregates['completed_this_week'] = ActivityLog.objects.filter(
+        verb='moved task',
+        detail__icontains="to 'Done'",
+        created_at__gte=week_ago,
+        task__assignees=request.user,
+    ).distinct().count()
+
+    return Response(aggregates)

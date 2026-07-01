@@ -164,6 +164,17 @@ App will be available at `http://localhost:5173`
 
 Activity logs are written automatically via Django signals (task changes, assignees, labels, comments) — there is no endpoint to create them directly.
 
+### Dashboard & My Tasks
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/me/tasks/` | Bearer | Tasks assigned to you across all workspaces, paginated (30/page). Filters: `priority` (single or comma-separated, e.g. `HIGH,URGENT`), `overdue=true`, `due_before`/`due_after` (`YYYY-MM-DD`), `label`, `workspace`, `project` |
+| GET | `/api/me/stats/` | Bearer | Summary counts: `total_assigned`, `overdue`, `due_today`, `due_this_week`, `completed_this_week` |
+
+`GET /api/workspaces/{id}/projects/` now also returns a `progress` object per project: `{ total_tasks, completed_tasks, percent }`, based on tasks sitting in a list named "Done".
+
+"Overdue" and "completed this week" are approximations noted by the product spec: overdue excludes tasks in a list named "Done" (case-insensitive) since there's no formal completed flag yet; "completed this week" is inferred from `ActivityLog` "moved task ... to 'Done'" entries in the last 7 days.
+
 ---
 
 ## Project Status
@@ -176,5 +187,5 @@ Activity logs are written automatically via Django signals (task changes, assign
 | **Phase 4** | Tasks — drag-and-drop cards, slide-out detail panel, priorities, due dates, assignees | ✅ Complete |
 | **Phase 5** | Labels & comments with author-scoped edit/delete | ✅ Complete |
 | **Phase 6** | Activity log & notifications — signal-driven activity feed (workspace, task, personal) | ✅ Complete |
-| Phase 7 | File attachments & avatar uploads | Pending |
-| Phase 8 | Unread indicators & real-time notification alerts | Pending |
+| **Phase 7** | Dashboard & filters — cross-workspace My Tasks view with server-side filters, dashboard stats, project progress | ✅ Complete |
+| Phase 8 | File attachments, avatar uploads & real-time notification alerts | Pending |

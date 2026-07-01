@@ -141,10 +141,20 @@ class TaskListSerializer(serializers.ModelSerializer):
 
 
 class ProjectListSerializer(serializers.ModelSerializer):
+    progress = serializers.SerializerMethodField()
+
     class Meta:
         model = Project
-        fields = ('id', 'name', 'description', 'status', 'due_date', 'created_at')
+        fields = ('id', 'name', 'description', 'status', 'due_date', 'created_at', 'progress')
         read_only_fields = ('id', 'created_at')
+
+    def get_progress(self, obj):
+        # total_tasks/completed_tasks come from annotations on the queryset
+        # (see workspace_projects view) — default to 0 if not annotated.
+        total = getattr(obj, 'total_tasks', 0) or 0
+        completed = getattr(obj, 'completed_tasks', 0) or 0
+        percent = round(completed / total * 100) if total else 0
+        return {'total_tasks': total, 'completed_tasks': completed, 'percent': percent}
 
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -183,3 +193,22 @@ class ActivityLogSerializer(serializers.ModelSerializer):
 
     def get_human_time(self, obj):
         return f"{timesince(obj.created_at)} ago"
+
+
+class MyTaskSerializer(serializers.ModelSerializer):
+    assignees = WorkspaceMemberSerializer(many=True, read_only=True)
+    labels = LabelSerializer(many=True, read_only=True)
+    comment_count = serializers.IntegerField(read_only=True)
+    task_list_name = serializers.CharField(source='task_list.name', read_only=True)
+    project_id = serializers.IntegerField(source='task_list.project.id', read_only=True)
+    project_name = serializers.CharField(source='task_list.project.name', read_only=True)
+    workspace_id = serializers.IntegerField(source='task_list.project.workspace.id', read_only=True)
+    workspace_name = serializers.CharField(source='task_list.project.workspace.name', read_only=True)
+
+    class Meta:
+        model = Task
+        fields = (
+            'id', 'title', 'priority', 'due_date', 'task_list_name',
+            'project_id', 'project_name', 'workspace_id', 'workspace_name',
+            'assignees', 'labels', 'comment_count',
+        )

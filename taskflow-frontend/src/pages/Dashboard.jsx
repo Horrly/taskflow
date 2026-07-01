@@ -5,6 +5,7 @@ import api from '../api/axios';
 import Modal from '../components/Modal';
 import Avatar from '../components/Avatar';
 import ActivityFeed from '../components/ActivityFeed';
+import StatsBar from '../components/StatsBar';
 
 const STATUS_BADGE = {
   ACTIVE: 'bg-green-100 text-green-700',
@@ -21,8 +22,31 @@ function extractError(err, fallback = 'Something went wrong.') {
 // ── WorkspaceSidebar ──────────────────────────────────────────────────────────
 
 function WorkspaceSidebar({ workspaces, selectedId, onSelect, onNew, loading }) {
+  const navigate = useNavigate();
+
   return (
     <aside className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-full">
+      <nav className="px-3 pt-3 pb-2 border-b border-gray-100 space-y-0.5">
+        <button
+          onClick={() => navigate('/me/tasks')}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+          My Tasks
+        </button>
+        <button
+          onClick={() => navigate('/activity')}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          My Activity
+        </button>
+      </nav>
+
       <div className="px-4 py-4 border-b border-gray-100">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Workspaces</p>
       </div>
@@ -138,8 +162,23 @@ function ProjectCard({ project, workspaceId, onClick }) {
       {project.description && (
         <p className="text-xs text-gray-500 line-clamp-2 mb-3">{project.description}</p>
       )}
+      {project.progress && project.progress.total_tasks > 0 && (
+        <div className="mb-3">
+          <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+            <div
+              className="h-full bg-indigo-500 rounded-full transition-all"
+              style={{ width: `${project.progress.percent}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1">
+            {project.progress.completed_tasks}/{project.progress.total_tasks} done ({project.progress.percent}%)
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between mt-auto">
-        <span className="text-xs text-gray-400">0 tasks</span>
+        <span className="text-xs text-gray-400">
+          {project.progress ? project.progress.total_tasks : 0} task{project.progress?.total_tasks !== 1 ? 's' : ''}
+        </span>
         {project.due_date && (
           <span className="text-xs text-gray-400">
             Due {new Date(project.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -619,12 +658,6 @@ export default function Dashboard() {
       <header className="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center justify-between flex-shrink-0">
         <span className="text-xl font-bold text-indigo-600 tracking-tight">TaskFlow</span>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/activity')}
-            className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            My Activity
-          </button>
           {user && <Avatar user={user} size="sm" />}
           <span className="text-sm text-gray-600">{user?.first_name || user?.email}</span>
           <button
@@ -635,6 +668,11 @@ export default function Dashboard() {
           </button>
         </div>
       </header>
+
+      {/* Stats */}
+      <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
+        <StatsBar />
+      </div>
 
       {/* Sidebar + main */}
       <div className="flex flex-1 min-h-0">

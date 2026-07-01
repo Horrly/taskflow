@@ -7,6 +7,8 @@ from .views import (
     label_detail,
     list_tasks,
     my_activity,
+    my_stats,
+    my_tasks,
     project_detail,
     project_lists,
     task_activity,
@@ -43,4 +45,6 @@ urlpatterns = router.urls + [
     path('comments/<int:pk>/', comment_detail, name='comment-detail'),
     path('labels/<int:pk>/', label_detail, name='label-detail'),
     path('me/activity/', my_activity, name='my-activity'),
+    path('me/tasks/', my_tasks, name='my-tasks'),
+    path('me/stats/', my_stats, name='my-stats'),
 ]

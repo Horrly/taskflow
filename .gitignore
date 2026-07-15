@@ -1,0 +1,39 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+build/
+.eggs/
+*.egg
+.pytest_cache/
+.mypy_cache/
+
+# ── Django ────────────────────────────────────────────────────────────────────
+*.sqlite3
+staticfiles/
+media/
+
+# ── Node / Vite ───────────────────────────────────────────────────────────────
+node_modules/
+dist/
+.cache/
+*.tsbuildinfo
+
+# ── Environment — NEVER commit secrets ───────────────────────────────────────
+.env
+*.env.local
+*.env.*.local
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editors ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
